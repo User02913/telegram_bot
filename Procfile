@@ -1,1 +1,1 @@
-web: gunicorn apr_bot:app
+worker: python3 apr_bot.py
