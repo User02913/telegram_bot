@@ -7,7 +7,9 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, Updater
 from playwright.async_api import async_playwright
 
+# Настраиваем логирование
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Получаем токен из переменных окружения или используем существующий
 BOT_TOKEN = os.environ.get("TELEGRAM_TOKEN", "8155341478:AAFIG7hFNPewG_euxMO0kzAXq1Sq25YiMqY")
@@ -32,6 +34,7 @@ async def fetch_apr(url, script):
             await browser.close()
             return result or "APY не найден"
     except Exception as e:
+        logger.error(f"Ошибка при парсинге {url}: {e}")
         return f"Ошибка: {e}"
 
 async def get_usda_apr():
@@ -174,7 +177,7 @@ async def sfrxusd(update, context): await send_apr(update, context, get_sfrxusd_
 
 async def all_apr(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_message(chat_id=update.effective_chat.id, text="🔄 Получаю все APY...")
-    start = time.time()
+    start_time = time.time()
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(
@@ -192,7 +195,7 @@ async def all_apr(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await browser.close()
 
-    elapsed = round(time.time() - start, 2)
+    elapsed = round(time.time() - start_time, 2)
     await context.bot.send_message(chat_id=update.effective_chat.id, text=f"""📊 Все APY:
 USDA: {results[0]}
 sUSDf: {results[1]}
@@ -207,6 +210,24 @@ scUSD: {results[9]}
 sfrxUSD: {results[10]}
 ⏱ Время: {elapsed} сек""")
 
+# Инициализируем бота глобально, до запуска Flask
+bot = ApplicationBuilder().token(BOT_TOKEN).build()
+
+# Регистрация обработчиков команд
+bot.add_handler(CommandHandler("start", start))
+bot.add_handler(CommandHandler("usda", usda))
+bot.add_handler(CommandHandler("susdf", susdf))
+bot.add_handler(CommandHandler("usde", usde))
+bot.add_handler(CommandHandler("slvl", slvl))
+bot.add_handler(CommandHandler("syrup", syrup))
+bot.add_handler(CommandHandler("scrvusd", scrvusd))
+bot.add_handler(CommandHandler("stkgho", stkgho))
+bot.add_handler(CommandHandler("stusr", stusr))
+bot.add_handler(CommandHandler("usdy", usdy))
+bot.add_handler(CommandHandler("scusd", scusd))
+bot.add_handler(CommandHandler("sfrxusd", sfrxusd))
+bot.add_handler(CommandHandler("all", all_apr))
+
 # ================== Веб-серверная часть для Render ==================
 
 # Эндпоинт для проверки работоспособности
@@ -214,79 +235,59 @@ sfrxUSD: {results[10]}
 def index():
     return "Бот запущен и работает! Используйте Telegram для взаимодействия с ним."
 
+# Тестовый эндпоинт для проверки
+@app.route('/test')
+def test():
+    return f"Тестовый эндпоинт работает! Токен: {BOT_TOKEN[:5]}... Бот инициализирован: {bot is not None}"
+
 # Эндпоинт для установки вебхука
 @app.route('/set_webhook')
 def set_webhook():
-    render_url = os.environ.get('RENDER_EXTERNAL_URL')
-    if not render_url:
-        return "RENDER_EXTERNAL_URL не задан в переменных окружения"
+    logger.info("Получен запрос на установку вебхука")
+    render_url = os.environ.get('RENDER_EXTERNAL_URL', 'https://telegram-bot-nhov.onrender.com')
+    logger.info(f"RENDER_EXTERNAL_URL: {render_url}")
     
     webhook_url = f"{render_url}/webhook"
+    logger.info(f"Устанавливаем вебхук на URL: {webhook_url}")
+    
     try:
         # Создаём временный апдейтер для установки вебхука
         updater = Updater(token=BOT_TOKEN)
         updater.bot.set_webhook(webhook_url)
+        logger.info(f"Вебхук успешно установлен на {webhook_url}")
         return f"Вебхук установлен на {webhook_url}"
     except Exception as e:
+        logger.error(f"Ошибка при установке вебхука: {e}")
         return f"Ошибка при установке вебхука: {e}"
 
 # Обработчик вебхуков от Telegram
 @app.route('/webhook', methods=['POST'])
-async def webhook():
+def webhook():
     try:
+        logger.info("Получен вебхук от Telegram")
         # Получаем данные запроса
         update_json = request.get_json()
+        logger.info(f"Данные вебхука: {update_json}")
+        
+        # Создаем объект Update
         update = Update.de_json(update_json, bot.bot)
         
-        # Асинхронно обрабатываем обновление
-        await bot.process_update(update)
+        # Запускаем асинхронную обработку в отдельном потоке
+        asyncio.run(bot.process_update(update))
         return "OK"
     except Exception as e:
-        logging.error(f"Ошибка при обработке вебхука: {e}")
+        logger.error(f"Ошибка при обработке вебхука: {e}")
         return f"Ошибка: {e}", 500
 
 # ================== Запуск ==================
 
-# Глобальная переменная для бота
-bot = None
-
-def main():
-    global bot
-    # Инициализация бота
-    bot = ApplicationBuilder().token(BOT_TOKEN).build()
-    
-    # Регистрация обработчиков команд
-    bot.add_handler(CommandHandler("start", start))
-    bot.add_handler(CommandHandler("usda", usda))
-    bot.add_handler(CommandHandler("susdf", susdf))
-    bot.add_handler(CommandHandler("usde", usde))
-    bot.add_handler(CommandHandler("slvl", slvl))
-    bot.add_handler(CommandHandler("syrup", syrup))
-    bot.add_handler(CommandHandler("scrvusd", scrvusd))
-    bot.add_handler(CommandHandler("stkgho", stkgho))
-    bot.add_handler(CommandHandler("stusr", stusr))
-    bot.add_handler(CommandHandler("usdy", usdy))
-    bot.add_handler(CommandHandler("scusd", scusd))
-    bot.add_handler(CommandHandler("sfrxusd", sfrxusd))
-    bot.add_handler(CommandHandler("all", all_apr))
-
-    # Определяем режим запуска в зависимости от окружения
-    if os.environ.get('RENDER'):
-        # На Render запускаем Flask сервер
-        logging.info("Запуск бота в режиме вебхука на Render")
-        # Не запускаем polling, а возвращаем объект приложения
-        return bot
-    else:
-        # Локальный запуск в режиме поллинга
-        logging.info("Запуск бота в режиме поллинга (локально)")
-        bot.run_polling()
-
 if __name__ == "__main__":
     if os.environ.get('RENDER'):
         # На Render запускаем Flask-сервер
-        bot = main()  # Инициализируем бота
+        logger.info("Запуск бота в режиме вебхука на Render")
         port = int(os.environ.get("PORT", 5000))
         app.run(host="0.0.0.0", port=port)
     else:
-        # Локальный запуск
-        main()
+        # Локальный запуск в режиме поллинга
+        logger.info("Запуск бота в режиме поллинга (локально)")
+        bot.run_polling()
