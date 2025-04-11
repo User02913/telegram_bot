@@ -1,3 +1,3 @@
-#!/usr/bin/env bash
-echo "▶ Установка браузеров для Playwright..."
-playwright install --with-deps
+#!/bin/bash
+echo "📦 Установка браузеров для Playwright..."
+python3 -m playwright install chromium
