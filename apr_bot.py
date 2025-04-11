@@ -33,7 +33,7 @@ async def get_susdf_apr():
     return await fetch_apr("https://app.falcon.finance/overview",
         """() => [...document.querySelectorAll('*')].map(e => e.textContent.trim()).find(t => /^\\d+(\\.\\d+)?%$/.test(t))""")
 
-async def get_usde_apr():
+async def get_susde_apr():
     return await fetch_apr("https://app.ethena.fi/earn",
         """() => [...document.querySelectorAll('*')].map(e => e.textContent.trim()).find(t => /^\\d+(\\.\\d+)?%$/.test(t))""")
 
@@ -75,11 +75,31 @@ async def get_scrvusd_apr():
         }""")
 
 async def get_sfrxusd_apr():
-    return await fetch_apr("https://app.frax.finance/sfrax/stake",
-        """() => {
-            const element = document.querySelector('div.frax-1tf5fhe');
-            return element ? element.textContent.trim() : null;
-        }""")
+    try:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            context = await browser.new_context()
+            page = await context.new_page()
+            await page.goto("https://www.inverse.finance/sDOLA", timeout=60000)
+            await page.wait_for_timeout(5000)
+
+            # Поиск блока с иконкой sfrxUSD и соответствующим значением
+            result = await page.evaluate("""
+                () => {
+                    const blocks = Array.from(document.querySelectorAll("div.css-1buihom"));
+                    for (const block of blocks) {
+                        if (block.innerText.includes("sfrxUSD")) {
+                            const percents = block.querySelectorAll("p");
+                            return percents.length > 1 ? percents[1].textContent.trim() : null;
+                        }
+                    }
+                    return null;
+                }
+            """)
+            await browser.close()
+            return result or "APY не найден"
+    except Exception as e:
+        return f"Ошибка: {e}"
 
 async def get_stkgho_apr():
     return await fetch_apr("https://app.aave.com/staking/",
@@ -126,7 +146,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 Доступные команды:
 /usda — APY USDA
 /susdf — APY sUSDf
-/usde — APY USDe
+/susde — APY sUSDe
 /slvl — APY slvlUSD
 /syrup — APY syrupUSD
 /scrvusd — APY scrvUSD
@@ -145,7 +165,7 @@ async def send_apr(update: Update, context: ContextTypes.DEFAULT_TYPE, fetch_fn,
 
 async def usda(update, context): await send_apr(update, context, get_usda_apr, "USDA")
 async def susdf(update, context): await send_apr(update, context, get_susdf_apr, "sUSDf")
-async def usde(update, context): await send_apr(update, context, get_usde_apr, "USDe")
+async def susde(update, context): await send_apr(update, context, get_susde_apr, "sUSDe")
 async def slvl(update, context): await send_apr(update, context, get_slvl_apr, "slvlUSD")
 async def syrup(update, context): await send_apr(update, context, get_syrup_apr, "syrupUSD")
 async def scrvusd(update, context): await send_apr(update, context, get_scrvusd_apr, "scrvUSD")
@@ -159,14 +179,14 @@ async def all_apr(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_message(chat_id=update.effective_chat.id, text="🔄 Получаю все APY...")
     start = time.time()
     results = await asyncio.gather(
-        get_usda_apr(), get_susdf_apr(), get_usde_apr(), get_slvl_apr(), get_syrup_apr(),
+        get_usda_apr(), get_susdf_apr(), get_susde_apr(), get_slvl_apr(), get_syrup_apr(),
         get_scrvusd_apr(), get_stkgho_apr(), get_stusr_apr(), get_usdy_apr(), get_scusd_apr(), get_sfrxusd_apr()
     )
     elapsed = round(time.time() - start, 2)
     await context.bot.send_message(chat_id=update.effective_chat.id, text=f"""📊 Все APY:
 USDA: {results[0]}
 sUSDf: {results[1]}
-USDe: {results[2]}
+sUSDe: {results[2]}
 slvlUSD: {results[3]}
 syrupUSD: {results[4]}
 scrvUSD: {results[5]}
@@ -184,7 +204,7 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("usda", usda))
     app.add_handler(CommandHandler("susdf", susdf))
-    app.add_handler(CommandHandler("usde", usde))
+    app.add_handler(CommandHandler("susde", susde))
     app.add_handler(CommandHandler("slvl", slvl))
     app.add_handler(CommandHandler("syrup", syrup))
     app.add_handler(CommandHandler("scrvusd", scrvusd))
