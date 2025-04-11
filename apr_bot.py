@@ -245,15 +245,13 @@ def test():
 def set_webhook():
     logger.info("Получен запрос на установку вебхука")
     render_url = os.environ.get('RENDER_EXTERNAL_URL', 'https://telegram-bot-nhov.onrender.com')
-    logger.info(f"RENDER_EXTERNAL_URL: {render_url}")
     
     webhook_url = f"{render_url}/webhook"
     logger.info(f"Устанавливаем вебхук на URL: {webhook_url}")
     
     try:
-        # Создаём временный апдейтер для установки вебхука
-        updater = Updater(token=BOT_TOKEN)
-        updater.bot.set_webhook(webhook_url)
+        # Используем напрямую объект бота, который уже инициализирован
+        bot.bot.set_webhook(webhook_url)
         logger.info(f"Вебхук успешно установлен на {webhook_url}")
         return f"Вебхук установлен на {webhook_url}"
     except Exception as e:
